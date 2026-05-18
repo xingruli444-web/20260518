@@ -39,11 +39,33 @@
     <div id="resultModal" class="modal hidden">
       <div class="modal-content">
         <h2 id="resultTitle">遊戲完成</h2>
-        <p id="resultMessage">您已成功鎖定目標！</p>
+        <p id="resultMessage">請以手勢選擇下一步動作。</p>
         <div class="modal-buttons">
-          <button id="restartBtn" class="btn btn-primary">重新開始</button>
+          <button id="restartBtn" class="btn btn-primary">繼續下一局</button>
           <button id="closeBtn" class="btn btn-secondary">關閉</button>
         </div>
+      </div>
+    </div>
+
+    <!-- 結束畫面 -->
+    <div id="endScreen" class="end-screen hidden">
+      <div class="end-screen-content">
+        <h1 id="endTitle">感謝遊戲！</h1>
+        <div class="score-grid">
+          <div class="score-card">
+            <span class="score-label">勝場</span>
+            <strong id="winsCount">0</strong>
+          </div>
+          <div class="score-card">
+            <span class="score-label">敗場</span>
+            <strong id="lossesCount">0</strong>
+          </div>
+          <div class="score-card">
+            <span class="score-label">平手</span>
+            <strong id="tiesCount">0</strong>
+          </div>
+        </div>
+        <button id="playAgainBtn" class="btn btn-primary">重新開始遊戲</button>
       </div>
     </div>
 

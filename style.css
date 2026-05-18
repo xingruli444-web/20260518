@@ -50,6 +50,8 @@ html, body {
   height: 100%;
   top: 0;
   left: 0;
+  transform: scaleX(-1);
+  pointer-events: none;
 }
 
 /* UI 面板 */
@@ -320,3 +322,63 @@ html, body {
     width: 100%;
   }
 }
+
+.end-screen {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(102, 126, 234, 0.96), rgba(118, 75, 162, 0.96));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+  padding: 24px;
+}
+
+.end-screen.hidden {
+  display: none;
+}
+
+.end-screen-content {
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 24px;
+  padding: 32px;
+  max-width: 540px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.2);
+}
+
+.end-screen-content h1 {
+  font-size: 32px;
+  color: #333;
+  margin-bottom: 24px;
+}
+
+.score-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.score-card {
+  background: #f8f9ff;
+  border: 1px solid rgba(102, 126, 234, 0.16);
+  border-radius: 18px;
+  padding: 18px;
+  box-shadow: 0 10px 24px rgba(102, 126, 234, 0.08);
+}
+
+.score-label {
+  display: block;
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.score-card strong {
+  display: block;
+  font-size: 28px;
+  color: #222;
+}
+
