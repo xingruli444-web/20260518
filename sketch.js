@@ -1,4 +1,4 @@
-let hands;
+﻿let hands;
 let camera;
 let video;
 let canvasElement;
@@ -6,7 +6,7 @@ let canvasCtx;
 
 let lockProgress = 0;
 let lockStartTime = null;
-const lockDuration = 1500;
+const lockDuration = 1500; // 1.5 秒鎖定時間
 let currentGestureLock = null;
 let isAwaitingAction = false;
 let wins = 0;
@@ -33,7 +33,7 @@ function setup() {
   initializeMediaPipe();
 }
 
-function initializeMediaPipe() {
+async function initializeMediaPipe() {
   video = document.getElementById('video');
   canvasElement = document.getElementById('canvas');
   canvasCtx = canvasElement.getContext('2d');
@@ -44,6 +44,19 @@ function initializeMediaPipe() {
       canvasElement.height = video.videoHeight;
     }
   };
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user' },
+      audio: false,
+    });
+    video.srcObject = stream;
+    await video.play();
+  } catch (err) {
+    alert('相機啟動失敗: ' + err.message);
+    updateStatus('相機初始化失敗');
+    return;
+  }
 
   hands = new Hands({
     locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
@@ -66,7 +79,11 @@ function initializeMediaPipe() {
     height: 480,
   });
 
-  camera.start();
+  camera.start().catch((err) => {
+    alert('相機啟動失敗: ' + err.message);
+    updateStatus('相機啟動失敗');
+  });
+
   video.onloadedmetadata = resizeCanvas;
   window.addEventListener('resize', resizeCanvas);
   updateStatus('準備就緒');
@@ -80,12 +97,7 @@ function onHandsResults(results) {
     const gesture = detectHandGesture(landmarks);
     updateStatus(`偵測到手勢：${formatGestureName(gesture)}`);
     drawHandSkeleton(landmarks, canvasElement.width, canvasElement.height);
-
-    if (isAwaitingAction) {
-      handleLockGesture(gesture);
-    } else {
-      resetLockProgress();
-    }
+    handleLockGesture(gesture);
   } else {
     updateStatus('未偵測到手部');
     resetLockProgress();
@@ -191,7 +203,11 @@ function drawHandSkeleton(landmarks, width, height) {
 }
 
 function handleLockGesture(gesture) {
-  if (gesture !== 'continue' && gesture !== 'end') {
+  const menuGestures = ['continue', 'end'];
+  const gameGestures = ['rock', 'scissors', 'paper'];
+  const canLock = isAwaitingAction ? menuGestures.includes(gesture) : gameGestures.includes(gesture);
+
+  if (!canLock) {
     resetLockProgress();
     return;
   }
@@ -207,12 +223,42 @@ function handleLockGesture(gesture) {
   updateProgressBar(lockProgress);
 
   if (lockProgress >= 100) {
-    if (gesture === 'continue') {
-      startNextRound();
-    } else if (gesture === 'end') {
-      endGame();
+    if (isAwaitingAction) {
+      if (gesture === 'continue') {
+        startNextRound();
+      } else if (gesture === 'end') {
+        endGame();
+      }
+    } else {
+      playRPSGame(gesture);
     }
   }
+}
+
+function playRPSGame(playerGesture) {
+  resetLockProgress();
+  currentGestureLock = null;
+
+  const choices = ['rock', 'paper', 'scissors'];
+  const computerGesture = choices[Math.floor(Math.random() * choices.length)];
+
+  let resultMessage = `你: ${formatGestureName(playerGesture)}，電腦: ${formatGestureName(computerGesture)}。`;
+  if (playerGesture === computerGesture) {
+    ties += 1;
+    resultMessage += '平手！';
+  } else if (
+    (playerGesture === 'rock' && computerGesture === 'scissors') ||
+    (playerGesture === 'scissors' && computerGesture === 'paper') ||
+    (playerGesture === 'paper' && computerGesture === 'rock')
+  ) {
+    wins += 1;
+    resultMessage += '你贏了！';
+  } else {
+    losses += 1;
+    resultMessage += '你輸了！';
+  }
+
+  showRoundEndScreen(resultMessage);
 }
 
 function resetLockProgress() {
@@ -278,11 +324,8 @@ function resetGame() {
   resetLockProgress();
 }
 
-function showRoundEndScreen() {
-  showResultModal(
-    '回合結束',
-    '請以「大拇指+小指」繼續下一局，或以「小指」結束遊戲。'
-  );
+function showRoundEndScreen(message) {
+  showResultModal('回合結果', message);
 }
 
 restartBtn.addEventListener('click', startNextRound);
@@ -296,4 +339,3 @@ resultModal.addEventListener('click', (e) => {
     hideResultModal();
   }
 });
-
