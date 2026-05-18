@@ -1,22 +1,17 @@
-// Canvas 尺寸完全匹配 Video
-canvasElement.width = video.videoWidth;
-canvasElement.height = video.videoHeight;
-
-// 座標轉換：正規化座標 × 實際尺寸
-const x = landmark.x * width;
-const y = landmark.y * height;// MediaPipe 手部追蹤應用
 let hands;
 let camera;
 let video;
 let canvasElement;
 let canvasCtx;
 
-let detectionStatus = '初始化中...';
 let lockProgress = 0;
-let isGameActive = false;
 let lockStartTime = null;
-let lockDuration = 3000; // 3秒鎖定時間
-let handsDetected = 0;
+const lockDuration = 1500;
+let currentGestureLock = null;
+let isAwaitingAction = false;
+let wins = 0;
+let losses = 0;
+let ties = 0;
 
 const statusEl = document.getElementById('status');
 const progressBarEl = document.getElementById('progressBar');
@@ -26,9 +21,14 @@ const resultTitle = document.getElementById('resultTitle');
 const resultMessage = document.getElementById('resultMessage');
 const restartBtn = document.getElementById('restartBtn');
 const closeBtn = document.getElementById('closeBtn');
+const endScreen = document.getElementById('endScreen');
+const endTitle = document.getElementById('endTitle');
+const winsCountEl = document.getElementById('winsCount');
+const lossesCountEl = document.getElementById('lossesCount');
+const tiesCountEl = document.getElementById('tiesCount');
+const playAgainBtn = document.getElementById('playAgainBtn');
 
 function setup() {
-  // 隱藏 p5 canvas
   noCanvas();
   initializeMediaPipe();
 }
@@ -38,23 +38,22 @@ function initializeMediaPipe() {
   canvasElement = document.getElementById('canvas');
   canvasCtx = canvasElement.getContext('2d');
 
-  // 設置畫布尺寸與視訊相同
   const resizeCanvas = () => {
-    canvasElement.width = video.videoWidth;
-    canvasElement.height = video.videoHeight;
+    if (video.videoWidth && video.videoHeight) {
+      canvasElement.width = video.videoWidth;
+      canvasElement.height = video.videoHeight;
+    }
   };
 
   hands = new Hands({
-    locateFile: (file) => {
-      return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
-    },
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
   });
 
   hands.setOptions({
-    maxNumHands: 2,
+    maxNumHands: 1,
     modelComplexity: 1,
-    minDetectionConfidence: 0.5,
-    minTrackingConfidence: 0.5,
+    minDetectionConfidence: 0.6,
+    minTrackingConfidence: 0.6,
   });
 
   hands.onResults(onHandsResults);
@@ -68,151 +67,233 @@ function initializeMediaPipe() {
   });
 
   camera.start();
-  resizeCanvas();
   video.onloadedmetadata = resizeCanvas;
   window.addEventListener('resize', resizeCanvas);
-
-  isGameActive = true;
   updateStatus('準備就緒');
 }
 
 function onHandsResults(results) {
-  canvasCtx.save();
   canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
   if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-    handsDetected = results.multiHandLandmarks.length;
-    updateStatus(`偵測到 ${handsDetected} 隻手`);
+    const landmarks = results.multiHandLandmarks[0];
+    const gesture = detectHandGesture(landmarks);
+    updateStatus(`偵測到手勢：${formatGestureName(gesture)}`);
+    drawHandSkeleton(landmarks, canvasElement.width, canvasElement.height);
 
-    // 繪製每隻手的骨架
-    results.multiHandLandmarks.forEach((landmarks, handIndex) => {
-      drawHandSkeleton(landmarks, canvasElement.width, canvasElement.height);
-    });
-
-    // 更新鎖定進度
-    updateLockProgress();
+    if (isAwaitingAction) {
+      handleLockGesture(gesture);
+    } else {
+      resetLockProgress();
+    }
   } else {
-    handsDetected = 0;
     updateStatus('未偵測到手部');
     resetLockProgress();
   }
+}
 
-  canvasCtx.restore();
+function detectHandGesture(landmarks) {
+  const thumb = isThumbExtended(landmarks);
+  const index = isFingerExtended(landmarks, 8, 6);
+  const middle = isFingerExtended(landmarks, 12, 10);
+  const ring = isFingerExtended(landmarks, 16, 14);
+  const pinky = isFingerExtended(landmarks, 20, 18);
+
+  if (!thumb && !index && !middle && !ring && !pinky) {
+    return 'rock';
+  }
+
+  if (!thumb && index && middle && !ring && !pinky) {
+    return 'scissors';
+  }
+
+  if (thumb && index && middle && ring && pinky) {
+    return 'paper';
+  }
+
+  if (thumb && !index && !middle && !ring && pinky) {
+    return 'continue';
+  }
+
+  if (!thumb && !index && !middle && !ring && pinky) {
+    return 'end';
+  }
+
+  return 'unknown';
+}
+
+function isFingerExtended(landmarks, tipIndex, pipIndex) {
+  return landmarks[tipIndex].y < landmarks[pipIndex].y - 0.04;
+}
+
+function isThumbExtended(landmarks) {
+  const thumbTip = landmarks[4];
+  const thumbIp = landmarks[3];
+  const thumbMcp = landmarks[2];
+  const horizontalDistance = Math.abs(thumbTip.x - thumbMcp.x);
+  const foldedDistance = Math.abs(thumbIp.x - thumbMcp.x);
+  return horizontalDistance > foldedDistance * 1.15 && horizontalDistance > 0.03;
+}
+
+function formatGestureName(gesture) {
+  switch (gesture) {
+    case 'rock':
+      return '石頭';
+    case 'scissors':
+      return '剪刀';
+    case 'paper':
+      return '布';
+    case 'continue':
+      return '繼續下一局';
+    case 'end':
+      return '結束遊戲';
+    default:
+      return '未知';
+  }
 }
 
 function drawHandSkeleton(landmarks, width, height) {
-  // 手部連接點
   const connections = [
-    [0, 1], [1, 2], [2, 3], [3, 4],           // 大拇指
-    [0, 5], [5, 6], [6, 7], [7, 8],           // 食指
-    [5, 9], [9, 10], [10, 11], [11, 12],      // 中指
-    [9, 13], [13, 14], [14, 15], [15, 16],    // 無名指
-    [13, 17], [17, 18], [18, 19], [19, 20],   // 小指
-    [0, 17], [0, 13], [0, 9], [5, 13],        // 手掌連接
+    [0, 1], [1, 2], [2, 3], [3, 4],
+    [0, 5], [5, 6], [6, 7], [7, 8],
+    [5, 9], [9, 10], [10, 11], [11, 12],
+    [9, 13], [13, 14], [14, 15], [15, 16],
+    [13, 17], [17, 18], [18, 19], [19, 20],
+    [0, 17], [0, 13], [0, 9], [5, 13],
   ];
 
-  // 繪製連接線
   canvasCtx.strokeStyle = '#00FF41';
   canvasCtx.lineWidth = 2;
 
   connections.forEach(([start, end]) => {
-    if (landmarks[start] && landmarks[end]) {
-      const startPoint = landmarks[start];
-      const endPoint = landmarks[end];
-
-      canvasCtx.beginPath();
-      canvasCtx.moveTo(startPoint.x * width, startPoint.y * height);
-      canvasCtx.lineTo(endPoint.x * width, endPoint.y * height);
-      canvasCtx.stroke();
-    }
+    const from = landmarks[start];
+    const to = landmarks[end];
+    canvasCtx.beginPath();
+    canvasCtx.moveTo(from.x * width, from.y * height);
+    canvasCtx.lineTo(to.x * width, to.y * height);
+    canvasCtx.stroke();
   });
 
-  // 繪製關鍵點
   landmarks.forEach((landmark, index) => {
     const x = landmark.x * width;
     const y = landmark.y * height;
-
-    // 不同關鍵點使用不同顏色
     if (index === 0) {
-      canvasCtx.fillStyle = '#FF0000'; // 手腕 - 紅色
+      canvasCtx.fillStyle = '#FF4D4D';
     } else if ([4, 8, 12, 16, 20].includes(index)) {
-      canvasCtx.fillStyle = '#FFD700'; // 指尖 - 金色
+      canvasCtx.fillStyle = '#FFD700';
     } else {
-      canvasCtx.fillStyle = '#00FF41'; // 其他 - 綠色
+      canvasCtx.fillStyle = '#00FF41';
     }
-
     canvasCtx.beginPath();
-    canvasCtx.arc(x, y, 4, 0, 2 * Math.PI);
+    canvasCtx.arc(x, y, 5, 0, 2 * Math.PI);
     canvasCtx.fill();
   });
 }
 
-function updateLockProgress() {
-  if (!lockStartTime) {
+function handleLockGesture(gesture) {
+  if (gesture !== 'continue' && gesture !== 'end') {
+    resetLockProgress();
+    return;
+  }
+
+  if (currentGestureLock !== gesture) {
+    currentGestureLock = gesture;
     lockStartTime = Date.now();
+    lockProgress = 0;
   }
 
   const elapsed = Date.now() - lockStartTime;
   lockProgress = Math.min((elapsed / lockDuration) * 100, 100);
-
   updateProgressBar(lockProgress);
 
   if (lockProgress >= 100) {
-    completeGame();
+    if (gesture === 'continue') {
+      startNextRound();
+    } else if (gesture === 'end') {
+      endGame();
+    }
   }
 }
 
 function resetLockProgress() {
+  currentGestureLock = null;
   lockStartTime = null;
   lockProgress = 0;
   updateProgressBar(0);
 }
 
 function updateStatus(status) {
-  detectionStatus = status;
   statusEl.textContent = status;
 }
 
 function updateProgressBar(progress) {
-  progressBarEl.style.width = progress + '%';
-  progressTextEl.textContent = Math.round(progress) + '%';
-}
-
-function completeGame() {
-  if (!isGameActive) return;
-  isGameActive = false;
-
-  showResultModal(
-    '遊戲完成！',
-    `成功追蹤 ${handsDetected} 隻手 ${lockDuration / 1000} 秒！`
-  );
+  progressBarEl.style.width = `${progress}%`;
+  progressTextEl.textContent = `${Math.round(progress)}%`;
 }
 
 function showResultModal(title, message) {
   resultTitle.textContent = title;
   resultMessage.textContent = message;
   resultModal.classList.remove('hidden');
+  isAwaitingAction = true;
+  resetLockProgress();
 }
 
 function hideResultModal() {
   resultModal.classList.add('hidden');
-}
-
-function restartGame() {
-  hideResultModal();
+  isAwaitingAction = false;
   resetLockProgress();
-  updateStatus('準備就緒');
-  isGameActive = true;
-  handsDetected = 0;
 }
 
-// 事件監聽
-restartBtn.addEventListener('click', restartGame);
-closeBtn.addEventListener('click', hideResultModal);
+function startNextRound() {
+  hideResultModal();
+  updateStatus('下一局開始，請出拳！');
+  resetLockProgress();
+}
 
-// 點擊模態框背景關閉
+function endGame() {
+  hideResultModal();
+  document.querySelector('.container').classList.add('hidden');
+  endScreen.classList.remove('hidden');
+  showEndScreen(wins, losses, ties);
+}
+
+function showEndScreen(winsValue, lossesValue, tiesValue) {
+  endTitle.textContent = '感謝遊戲！';
+  winsCountEl.textContent = winsValue;
+  lossesCountEl.textContent = lossesValue;
+  tiesCountEl.textContent = tiesValue;
+}
+
+function hideEndScreen() {
+  endScreen.classList.add('hidden');
+}
+
+function resetGame() {
+  document.querySelector('.container').classList.remove('hidden');
+  wins = 0;
+  losses = 0;
+  ties = 0;
+  updateStatus('準備就緒');
+  resetLockProgress();
+}
+
+function showRoundEndScreen() {
+  showResultModal(
+    '回合結束',
+    '請以「大拇指+小指」繼續下一局，或以「小指」結束遊戲。'
+  );
+}
+
+restartBtn.addEventListener('click', startNextRound);
+closeBtn.addEventListener('click', hideResultModal);
+playAgainBtn.addEventListener('click', () => {
+  hideEndScreen();
+  resetGame();
+});
 resultModal.addEventListener('click', (e) => {
   if (e.target === resultModal) {
     hideResultModal();
   }
 });
+
